@@ -15,7 +15,7 @@ Sources: [primary mapping](https://github.com/frankcrawford/it87/blob/bc06d34884
 
 On Ubuntu 24.04 with running kernel `7.0.0-31-generic`, this pinned driver passed an unprivileged build using the installed kernel headers and GCC 13.3.0. `modinfo` reported the expected version, `mmio` parameter, and matching kernel vermagic. BTF generation was skipped because the distribution's `vmlinux` was unavailable; the kernel module built successfully.
 
-**Building successfully is not hardware verification.** Installation, device detection, header mapping, and actual RPM response must be recorded separately. This document does not claim that a successful hardware test has occurred.
+The driver was subsequently installed and loaded on that machine. All ten headers were detected, and the five connected motherboard channels showed RPM response to bounded speed changes followed by successful firmware restoration. Details and limits are in the [hardware validation record](validation.md). A successful build alone does not establish that another machine or firmware revision behaves the same way.
 
 ## Installation
 
@@ -36,6 +36,15 @@ sudo ./scripts/install-it87.sh --no-load
 The installer downloads only five source/license files from the pinned upstream commit, verifies each SHA256 checksum, stages root-owned source under `/usr/src/it87-v2.0-4-gbc06d34.20260913`, and installs through DKMS. This preserves the distribution's original driver. It refuses to replace a different registered it87 DKMS version or a different loaded it87 module. A repeat invocation with this version already installed and loaded reports that state without changes.
 
 Default installation ends by loading `it87`. `--no-load` skips that step. No startup module configuration, fan curve, sensor scan, or fan calibration is created. Logs and before/after readings go to `/var/log/thermaldeck/it87-install-*.log`. DKMS rebuilds the driver during future kernel updates; compatibility with future kernels still needs checking.
+
+After successful hardware checks, optional boot loading can be enabled separately:
+
+```bash
+sudo ./scripts/enable-it87-at-boot.sh
+```
+
+This creates only `/etc/modules-load.d/thermaldeck-it87.conf` containing `it87`.
+It does not apply a manual speed or software curve when the computer starts.
 
 Upstream's convenience installer is intentionally not used: it derives the module name from the checkout directory name, loads the module automatically, and does not reliably propagate installation failure. ThermalDeck checks each installation step explicitly.
 
@@ -82,6 +91,9 @@ modinfo -n it87
 ```
 
 The final path should resolve to the distribution's original module rather than `updates/dkms`. Only after confirming successful removal, delete the dedicated source directory if desired. Remove any startup configuration you added separately; this installer creates none. If module unloading or firmware restoration fails, inspect the logs and use a normal reboot as recovery rather than forcing module removal.
+
+If you used the optional boot script, remove its dedicated file before rebooting:
+`sudo rm /etc/modules-load.d/thermaldeck-it87.conf`.
 
 ## License
 

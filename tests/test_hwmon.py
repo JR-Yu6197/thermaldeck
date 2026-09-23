@@ -24,10 +24,10 @@ class RecordingBackend(HwmonBackend):
         chip = (path.parent / "name").read_text().strip() if (path.parent / "name").exists() else ""
         if re.fullmatch(r"pwm[0-9]+", path.name):
             mode = path.with_name(path.name + "_enable")
-            if chip == "it87952" and mode.exists() and mode.read_text().strip() == "2":
+            if chip in ("it87952", "it87952_a10a090a") and mode.exists() and mode.read_text().strip() == "2":
                 raise OSError(errno.ENODATA, "No live PWM feedback in firmware mode")
         value = super()._integer(path)
-        if chip == "it8696" and path.name.endswith("_enable") and value == 1:
+        if chip in ("it8696", "it8696_a10a090a") and path.name.endswith("_enable") and value == 1:
             pwm = path.with_name(path.name.removesuffix("_enable"))
             if super()._integer(pwm) == 255:
                 return 0
@@ -90,7 +90,8 @@ class HwmonTests(unittest.TestCase):
         states = {item["id"]: item for item in self.backend.discover()}
         self.assertEqual(states[self.fan_id]["name"], "CPU_FAN")
         self.assertEqual(states[self.fan_id]["mode"], "hardware")
-        self.assertEqual(states[self.fan_id]["percent"], 40)
+        self.assertIsNone(states[self.fan_id]["percent"])
+        self.assertEqual(states[self.fan_id]["reported_pwm"], 102)
         self.assertTrue(states[self.fan_id]["controllable"])
         self.assertEqual(states["mb:it8696:5"]["min_percent"], 70)
         self.assertTrue(states["mb:it8696:5"]["pump"])
@@ -140,6 +141,49 @@ class HwmonTests(unittest.TestCase):
             self.backend.set_speed("mb:it8696:1@hwmon0", 50)
         self.assertEqual(self.backend.writes, [])
 
+    def test_verified_board_siv_names_use_canonical_ids_and_mapping(self):
+        (self.chip / "name").write_text("it8696_a10a090a", encoding="ascii")
+        self.add_chip("hwmon1", "it87952_a10a090a", {4: (5000, 200, 2)})
+        states = {state["id"]: state for state in self.backend.discover()}
+        self.assertEqual(states[self.fan_id]["chip"], "it8696")
+        self.assertEqual(states[self.fan_id]["name"], "CPU_FAN")
+        self.assertTrue(states[self.fan_id]["controllable"])
+        pump = states["mb:it87952:4"]
+        self.assertEqual(pump["chip"], "it87952")
+        self.assertEqual(pump["name"], "SYS_FAN7_PUMP")
+        self.assertEqual(pump["min_percent"], 70)
+        self.assertTrue(pump["controllable"])
+        self.assertIsNone(pump["reported_pwm"])
+        self.assertEqual(self.backend.writes, [])
+
+    def test_unverified_siv_suffix_is_read_only(self):
+        for name in ("it8696_other", "it8696_a10a090b", "it8696_a10a090a_extra"):
+            with self.subTest(name=name):
+                (self.chip / "name").write_text(name, encoding="ascii")
+                state = self.backend.status(f"mb:{name}:1")
+                self.assertEqual(state["rpm"], 1200)
+                self.assertFalse(state["controllable"])
+                with self.assertRaises(HwmonError):
+                    self.backend.full(state["id"])
+        self.assertEqual(self.backend.writes, [])
+
+    def test_siv_and_plain_names_count_as_duplicate_canonical_chip(self):
+        self.add_chip("hwmon1", "it8696_a10a090a", {1: (1200, 102, 2)})
+        states = self.backend.discover()
+        self.assertEqual(len(states), 3)
+        self.assertEqual(len({state["id"] for state in states}), 3)
+        self.assertTrue(all(state["chip"] == "it8696" for state in states))
+        self.assertTrue(all(not state["controllable"] for state in states))
+        self.assertEqual(self.backend.writes, [])
+
+    def test_verified_siv_name_still_requires_exact_board(self):
+        (self.chip / "name").write_text("it8696_a10a090a", encoding="ascii")
+        self.board.write_text("Unverified board", encoding="ascii")
+        self.assertFalse(self.backend.status(self.fan_id)["controllable"])
+        with self.assertRaises(HwmonError):
+            self.backend.snapshot(self.fan_id)
+        self.assertEqual(self.backend.writes, [])
+
     def test_invalid_input_never_writes(self):
         for percent in (True, False, 50.0, "50", None, -1, 0, 29, 101):
             with self.subTest(percent=percent), self.assertRaises(ValidationError):
@@ -161,6 +205,16 @@ class HwmonTests(unittest.TestCase):
         (self.chip / "pwm1_enable").write_text("1", encoding="ascii")
         self.backend.set_speed(self.fan_id, 30)
         self.assertEqual(self.backend.writes, [("pwm1", 77)])
+
+    def test_auto_firmware_register_is_not_presented_as_instantaneous_duty(self):
+        for raw_pwm in (0, 102, 255):
+            with self.subTest(raw_pwm=raw_pwm):
+                (self.chip / "pwm1").write_text(str(raw_pwm), encoding="ascii")
+                state = self.backend.status(self.fan_id)
+                self.assertEqual(state["mode"], "hardware")
+                self.assertIsNone(state["percent"])
+                self.assertEqual(state["reported_pwm"], raw_pwm)
+                self.assertEqual(state["rpm"], 1200)
 
     def test_full_and_full_mode_reporting(self):
         (self.chip / "pwm1_enable").write_text("0", encoding="ascii")

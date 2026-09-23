@@ -22,6 +22,12 @@ CHANNEL_NAMES = {
         4: "SYS_FAN7_PUMP", 5: "SYS_FAN8_PUMP",
     },
 }
+# communityit87 includes the verified board's SIV ID in its hwmon names.
+# Accept only these exact names, never strip arbitrary suffixes from a chip.
+_SIV_CHIP_NAMES = {
+    "it8696_a10a090a": "it8696",
+    "it87952_a10a090a": "it87952",
+}
 _FAN_INPUT = re.compile(r"fan([1-9][0-9]*)_input\Z")
 _CHIP_NAME = re.compile(r"[A-Za-z0-9_.+-]+\Z")
 _MODES = {0: "full", 1: "manual", 2: "hardware"}
@@ -95,7 +101,7 @@ class HwmonBackend:
                 continue
             chip = self._read_text(directory / "name")
             if chip and _CHIP_NAME.fullmatch(chip):
-                found.append((directory, chip))
+                found.append((directory, _SIV_CHIP_NAMES.get(chip, chip)))
         return found
 
     def _channels(self) -> list[_Channel]:
@@ -177,7 +183,11 @@ class HwmonBackend:
         state = {
             "id": channel.id, "kind": "motherboard", "name": channel.name,
             "chip": channel.chip, "rpm": rpm,
-            "percent": 100 if mode == 0 else (round(pwm * 100 / 255) if pwm is not None else None),
+            # In firmware mode this register may be a curve/start value rather
+            # than the fan's instantaneous duty; do not present it as a speed.
+            "percent": (100 if mode == 0 else round(pwm * 100 / 255)
+                        if mode == 1 and pwm is not None else None),
+            "reported_pwm": pwm,
             "mode": _MODES.get(mode, "unavailable"),
             "min_percent": channel.minimum, "max_percent": 100,
             "controllable": not errors, "pump": channel.pump, "sensor": "cpu",

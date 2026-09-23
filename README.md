@@ -5,6 +5,11 @@ A local Linux dashboard for NVIDIA GPU fans and Gigabyte motherboard cooling.
 GPU · CPU 라디에이터 팬 · 케이스 팬 · 펌프를 한 화면에서 확인하고 조절하는 GTK 앱입니다.
 Ubuntu 24.04 / Python 3 / GTK 3를 기준으로 개발했습니다.
 
+![ThermalDeck cooling dashboard](assets/screenshot.png)
+
+실제 대상 PC에서 **GPU 2개와 메인보드의 연결된 5개 팬 단자**의 속도 변경 및 복귀를 확인했습니다.
+10개 메인보드 단자를 인식하며, 회전 신호가 없는 5개 단자의 실제 연결 장치 응답은 검증하지 않았습니다.
+
 ## 기능
 
 - NVIDIA GPU를 실행 시 자동 검색하고 UUID로 개별 제어합니다. 카드의 모든 팬 채널에 같은 속도를 적용합니다.
@@ -46,6 +51,7 @@ sudo ./scripts/install-it87.sh
 
 드라이버는 검토한 커밋과 파일 SHA256으로 고정합니다. 설치 과정에서 커널 드라이버를 빌드하고 로드하며,
 팬 자동 보정이나 속도 설정은 하지 않습니다. 실제 제어 검증 및 재부팅 후 로드는 [드라이버 안내](docs/driver.md)를 참고하세요.
+하드웨어 검증이 끝난 뒤 `sudo ./scripts/enable-it87-at-boot.sh`를 실행하면 다음 부팅부터 드라이버도 로드됩니다.
 
 ## 지원 단자
 
@@ -58,6 +64,7 @@ sudo ./scripts/install-it87.sh
 RPM 0은 미연결·정지·회전 신호 없음 중 하나일 수 있습니다. 분배기에 연결된 팬은 보통 대표 RPM 하나만 보입니다.
 GPU의 RPM과 %는 NVML이 보고하는 값이며 물리적인 팬 정지/고장 여부를 독립적으로 보증하지 않습니다.
 여러 GPU 팬 채널 중 가장 높은 RPM과 %를 카드 요약에 표시합니다.
+메인보드가 BIOS 제어 중일 때는 PWM 레지스터가 현재 출력을 뜻하지 않을 수 있어 % 대신 대시를 표시합니다.
 CPU_OPT와 PUMP 단자는 보수적으로 최소 70%, 다른 팬과 GPU는 최소 30%를 적용하며 드라이버 한도를 함께 지킵니다.
 이는 모든 펌프의 작동을 보장하는 수치가 아니므로 실제 펌프 단자와 제조사 권장 설정을 확인하세요.
 전압/DC/PWM 방식, 클럭, 전력 제한, RGB, AIO LCD는 변경하지 않습니다.
@@ -79,7 +86,7 @@ CPU_OPT와 PUMP 단자는 보수적으로 최소 70%, 다른 팬과 GPU는 최�
 ```bash
 python3 -m unittest discover -s tests -v
 python3 -m compileall -q thermaldeck
-bash -n scripts/install.sh scripts/install-it87.sh
+for script in scripts/*.sh; do bash -n "$script"; done
 ```
 
 테스트는 모의 NVML / 임시 sysfs를 사용하여 검증 실패, 부분 쓰기 실패, 복귀, 장치 식별,
