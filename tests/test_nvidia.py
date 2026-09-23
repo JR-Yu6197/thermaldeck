@@ -91,6 +91,21 @@ class NvidiaTests(unittest.TestCase):
         self.assertTrue(all(state["mode"] == "auto" for state in states))
         self.assertEqual(self.nvml.writes, [])
 
+    def test_optional_rpm_reports_both_channels_and_summary_maximum(self):
+        self.nvml.rpm = lambda handle, index: [1199, 1200][index]
+        state = self.backend.status(self.device)
+        self.assertEqual(state["rpm"], 1200)
+        self.assertEqual([fan["rpm"] for fan in state["fans"]], [1199, 1200])
+        self.assertEqual(self.nvml.writes, [])
+
+    def test_unsupported_rpm_does_not_disable_fan_control(self):
+        def unsupported(handle, index):
+            raise NvidiaError("Not supported")
+        self.nvml.rpm = unsupported
+        state = self.backend.status(self.device)
+        self.assertIsNone(state["rpm"])
+        self.assertTrue(state["controllable"])
+
     def test_invalid_speed_types_and_bounds_never_write(self):
         for percent in (True, False, 45.0, "45", None, -1, 0, 29, 101):
             with self.subTest(percent=percent), self.assertRaises(NvidiaError):

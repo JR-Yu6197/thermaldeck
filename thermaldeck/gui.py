@@ -311,7 +311,7 @@ class DeviceCard(Gtk.Box):
         self._temperature_metric()
         missing_gpu_rpm = is_gpu and device.get('rpm') is None
         self.metrics['rpm'].set_text('미지원' if missing_gpu_rpm else numeric(device.get('rpm'), ' RPM'))
-        self.metric_captions['rpm'].set_text('드라이버 RPM 미제공' if missing_gpu_rpm else '팬 회전수')
+        self.metric_captions['rpm'].set_text('드라이버 RPM 미제공' if missing_gpu_rpm else ('GPU 보고 RPM (최대)' if is_gpu else '팬 회전수'))
         rpm_style = self.metrics['rpm'].get_style_context()
         if missing_gpu_rpm:
             rpm_style.add_class('unsupported-value')
@@ -443,7 +443,7 @@ class Dashboard(Gtk.Window):
         board_heading = row()
         board_heading.set_margin_top(5)
         board_heading.pack_start(label('메인보드 팬 · 펌프', 'section-title'), True, True, 0)
-        board_heading.pack_end(label('RPM = 실제 회전수 · % = 제어 출력', 'muted'), False, False, 0)
+        board_heading.pack_end(label('메인보드 RPM = 회전 신호 · % = PWM 출력', 'muted'), False, False, 0)
         self.content.pack_start(board_heading, False, False, 0)
         self.board_grid = Gtk.Grid(column_spacing=12, row_spacing=12, column_homogeneous=True)
         self.content.pack_start(self.board_grid, False, False, 0)

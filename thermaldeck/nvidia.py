@@ -10,6 +10,10 @@ class NvidiaError(RuntimeError):
     pass
 
 
+class FanSpeedInfo(C.Structure):
+    _fields_ = [("version", C.c_uint), ("fan", C.c_uint), ("speed", C.c_uint)]
+
+
 class Nvml:
     def __init__(self):
         self.lib = C.CDLL("libnvidia-ml.so.1")
@@ -27,6 +31,7 @@ class Nvml:
             "nvmlDeviceGetTemperature": [C.c_void_p, C.c_uint, C.POINTER(C.c_uint)],
             "nvmlDeviceGetFanControlPolicy_v2": [C.c_void_p, C.c_uint, C.POINTER(C.c_uint)],
             "nvmlDeviceGetFanSpeed_v2": [C.c_void_p, C.c_uint, C.POINTER(C.c_uint)],
+            "nvmlDeviceGetFanSpeedRPM": [C.c_void_p, C.POINTER(FanSpeedInfo)],
             "nvmlDeviceGetTargetFanSpeed": [C.c_void_p, C.c_uint, C.POINTER(C.c_uint)],
             "nvmlDeviceSetFanSpeed_v2": [C.c_void_p, C.c_uint, C.c_uint],
             "nvmlDeviceSetDefaultFanSpeed_v2": [C.c_void_p, C.c_uint],
@@ -79,6 +84,11 @@ class Nvml:
             raise NvidiaError("드라이버가 유효한 팬 속도 범위를 제공하지 않습니다.")
         return low, high
 
+    def rpm(self, handle, index):
+        value = FanSpeedInfo(C.sizeof(FanSpeedInfo) | (1 << 24), index, 0)
+        self.call("nvmlDeviceGetFanSpeedRPM", handle, C.byref(value))
+        return value.speed
+
     def close(self):
         self.call("nvmlShutdown")
 
@@ -119,6 +129,13 @@ class NvidiaBackend:
                      "policy": self.n.uint("nvmlDeviceGetFanControlPolicy_v2", handle, index),
                      "percent": self.n.uint("nvmlDeviceGetFanSpeed_v2", handle, index),
                      "target": self.n.uint("nvmlDeviceGetTargetFanSpeed", handle, index)} for index in range(count)]
+            for fan in fans:
+                try:
+                    fan["rpm"] = self.n.rpm(handle, fan["index"])
+                except (AttributeError, NvidiaError):
+                    fan["rpm"] = None
+            rpms = [fan["rpm"] for fan in fans if fan["rpm"] is not None]
+            state["rpm"] = max(rpms) if rpms else None
             automatic = all(fan["policy"] == 0 for fan in fans)
             state.update(fans=fans, percent=max(fan["percent"] for fan in fans),
                          mode="auto" if automatic else "manual", controllable=True,
